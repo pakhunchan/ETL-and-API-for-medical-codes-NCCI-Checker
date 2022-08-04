@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: cms-ncci-checker
+
+Resources:
+  MyS3Bucket:
+    Type: AWS::S3::Bucket
+
+  ExtractLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: MyExtractLambda
+      Description: Takes the csv file, breaks task down into smaller pieces, and sends the tasks to SQS as messages for the LoadLambda
+      CodeUri: ./src/extract
+      Handler: lambda_function.lambda_handler
+      MemorySize: 1024
+      Timeout: 40
+      Runtime: python3.9
+      Environment:
+        Variables:
+          queue_url: !Ref MySQSQueue
+      Events:
+        S3Event:
+          Type: S3
+          Properties:
+            Bucket: !Ref MyS3Bucket
+            Events:
+              - s3:ObjectCreated:Put
+              - s3:ObjectCreated:Post
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: ncci
+      Policies:
+        - AWSLambdaExecute
+        - S3ReadPolicy:
+            BucketName: "*"
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - sqs:*
+              Resource: "*"
+
+  LoadLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: MyLoadLambda
+      Description: Polls SQS for messages, pulls data from S3 csv file, and puts records into DynamoDB
+      CodeUri: ./src/load
+      Handler: lambda_function.lambda_handler
+      MemorySize: 1024
+      Timeout: 80
+      Runtime: python3.9
+      Environment:
+        Variables:
+          dynamodb_table: !Ref MyDynamoDB
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt MySQSQueue.Arn
+            BatchSize: 1
+      Policies:
+        - AWSLambdaExecute
+        - S3ReadPolicy:
+            BucketName: "*"
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - sqs:*
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - dynamodb:*
+              Resource: "*"
+
+  APILambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: MyAPILambda
+      Description: Receives get-commands from API Gateway, gets the relevant data from DynamoDB, and returns the data
+      CodeUri: ./src/api
+      Handler: lambda_function.lambda_handler
+      MemorySize: 1024
+      Timeout: 30
+      Runtime: python3.9
+      Environment:
+        Variables:
+          dynamodb_table: !Ref MyDynamoDB
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /check
+            Method: get
+      Policies:
+        - AWSLambdaExecute
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:*
+              Resource: "*"
+
+  MySQSQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 120
+
+  MyDynamoDB:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: "NCCI-Checker-DynamoDB-Table"
+      AttributeDefinitions:
+        - AttributeName: "code1"
+          AttributeType: "S"
+        - AttributeName: "code2"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "code1"
+          KeyType: "HASH"
+        - AttributeName: "code2"
+          KeyType: "RANGE"
+      BillingMode: PAY_PER_REQUEST
+
+Outputs:
+  APIEndpoint:
+    Description: "API Gateway endpoint URL for Prod stage for NCCI function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/check"
+
+  MyS3Bucket:
+    Value: !Ref MyS3Bucket
