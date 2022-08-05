@@ -31,6 +31,7 @@ To deploy the infrastructure and run the script as detailed below, you need to h
 sam build
 sam deploy --guided
 ```
+Note: Do save the configuration when offered the option. This will be needed when you want to conveniently delete the stack via the simple command `sam delete`.
 
 ## Step 2. Upload csv files to S3
 
@@ -51,7 +52,7 @@ This will trigger the data pipeline which will parse the csv files and load the 
 
 ## Step 3. Destroying the resources (when you're done playing with it)
 ```bash
-sam destroy --config-file samconfig.toml
+sam delete
 ```
 
 # Additional information
