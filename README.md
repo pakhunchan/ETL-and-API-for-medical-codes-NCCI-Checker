@@ -29,7 +29,7 @@ To deploy the infrastructure and run the script as detailed below, you need to h
 
 ```bash
 sam build
-sam deploy --config-file samconfig.toml
+sam deploy --guided
 ```
 
 ## Step 2. Upload csv files to S3
